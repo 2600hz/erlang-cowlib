@@ -1225,8 +1225,8 @@ send_or_queue_data(StreamID, State0=#http2_machine{opts=Opts, local_window=ConnW
 %% all streams and send what we can until either everything is
 %% sent or we run out of space in the window.
 send_data(State0=#http2_machine{streams=Streams0}) ->
-	Iterator = maps:iterator(Streams0),
-	case send_data_for_all_streams(maps:next(Iterator), Streams0, State0, []) of
+	Iterator = iterator(Streams0),
+	case send_data_for_all_streams(next(Iterator), Streams0, State0, []) of
 		{ok, Streams, State, []} ->
 			{ok, State#http2_machine{streams=Streams}};
 		{ok, Streams, State, Send} ->
@@ -1243,14 +1243,14 @@ send_data_for_all_streams(_, Streams, State=#http2_machine{local_window=ConnWind
 send_data_for_all_streams({StreamID, Stream0, Iterator}, Streams, State0, Send) ->
 	case send_data_for_one_stream(Stream0, State0, []) of
 		{ok, Stream, State, []} ->
-			send_data_for_all_streams(maps:next(Iterator),
+			send_data_for_all_streams(next(Iterator),
 				Streams#{StreamID => Stream}, State, Send);
 		%% We need to remove the stream here because we do not use stream_store/2.
 		{ok, #stream{local=fin, remote=fin}, State, SendData} ->
-			send_data_for_all_streams(maps:next(Iterator),
+			send_data_for_all_streams(next(Iterator),
 				maps:remove(StreamID, Streams), State, [{StreamID, fin, SendData}|Send]);
 		{ok, Stream=#stream{local=IsFin}, State, SendData} ->
-			send_data_for_all_streams(maps:next(Iterator),
+			send_data_for_all_streams(next(Iterator),
 				Streams#{StreamID => Stream}, State, [{StreamID, IsFin, SendData}|Send])
 	end.
 
@@ -1597,3 +1597,16 @@ stream_linger(StreamID, State=#http2_machine{local_lingering_streams=Lingering0}
 	%% We only keep up to 100 streams in this state. @todo Make it configurable?
 	Lingering = [StreamID|lists:sublist(Lingering0, 100 - 1)],
 	State#http2_machine{local_lingering_streams=Lingering}.
+
+iterator(M) when is_map(M) -> {maps:keys(M), M};
+iterator(M) -> erlang:error({badmap, M}, [M]).
+
+next({[], _M}) ->
+    none;
+next({[Key | Keys], M}) ->
+    {Key, maps:get(Key, M), {Keys, M}};
+next(none) ->
+    none;
+next(Iter) ->
+    erlang:error(badarg, [Iter]).
+
